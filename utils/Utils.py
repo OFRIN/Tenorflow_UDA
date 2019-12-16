@@ -11,21 +11,6 @@ def log_print(string, log_path = './log.txt'):
     f.write(string + '\n')
     f.close()
     
-def cosine_learning_schedule(st_lr, warmup_lr, end_lr, warmup_iteration, max_iteration, alpha):
-    learning_rate_list = []
-    decay_iteration = max_iteration - warmup_iteration
-    t_warmup_lr = (warmup_lr - st_lr) / warmup_iteration
-    
-    for t in range(1, warmup_iteration + 1):
-        learning_rate_list.append(st_lr + t * t_warmup_lr)
-    
-    for t in range(1, decay_iteration + 1):
-        cosine_decay = 0.5 * (1 + np.cos(np.pi * t / decay_iteration))
-        cosine_decay = (1 - alpha) * cosine_decay + alpha
-        learning_rate_list.append(cosine_decay * warmup_lr)
-
-    return learning_rate_list
-
 def get_data(file):
     with open(file, 'rb') as fo:
         data = pickle.load(fo, encoding='bytes')
@@ -41,7 +26,7 @@ def get_dataset(dataset_dir, n_label, augment = None):
     test_dataset = []
 
     n_label_per_class = n_label // 10
-
+    
     #########################################################
     # train 
     #########################################################

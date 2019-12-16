@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument('--labels', dest='labels', help='labels', default='all', type=str)
     parser.add_argument('--softmax-temp', dest='softmax_temp', default=-1, type=float)
     parser.add_argument('--confidence-mask', dest='confidence_mask', default=-1, type=float)
+    parser.add_argument('--tsa', dest='tsa', default='', type=str)
     return parser.parse_args()
 
 args = parse_args()
@@ -75,6 +76,7 @@ u_image_var = tf.placeholder(tf.float32, [None] + shape, name = 'image/unlabeled
 ua_image_var = tf.placeholder(tf.float32, [None] + shape, name = 'image/unlabeled_with_augment')
 
 is_training = tf.placeholder(tf.bool)
+global_step = tf.placeholder(tf.int32)
 
 # 2.2. supervised model
 x_logits_op, x_predictions_op = WideResNet(x_image_var, is_training)
@@ -84,10 +86,21 @@ p_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(u_image
 q_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(ua_image_var, UNSUP_RATIO)], axis = 0)
 
 # 2.4. calculate supervised/unsupervised loss
-
-# TODO: without tsa
 sup_loss_op = tf.nn.softmax_cross_entropy_with_logits_v2(logits = x_logits_op, labels = x_label_var)
-sup_loss_op = tf.reduce_mean(sup_loss_op)
+
+# mode_list = ['exp_schedule', 'log_schedule', 'linear_schedule']
+if args.tsa != '':
+    log_print('[i] TSA : {}'.format(args.tsa))
+    alpha_t, nt = TSA_Schedule(global_step, MAX_ITERATION, args.tsa, CLASSES)
+
+    correct_prob = tf.reduce_sum(x_label_var * x_predictions_op, axis = -1)
+    sup_mask = 1. - tf.cast(tf.greater(correct_prob, nt), tf.float32)
+    sup_mask = tf.stop_gradient(sup_mask)
+
+    sup_loss_op = sup_mask * sup_loss_op
+    sup_loss_op = tf.reduce_sum(sup_loss_op) / tf.maximum(tf.reduce_sum(sup_mask), 1.)
+else:
+    sup_loss_op = tf.reduce_mean(sup_loss_op)
 
 # with softmax temperature
 if args.softmax_temp != -1:
@@ -124,7 +137,6 @@ accuracy_op = tf.reduce_mean(tf.cast(correct_op, tf.float32)) * 100
 model_summary(train_vars, summary_txt_path)
 
 # 3. optimizer & tensorboard
-global_step = tf.placeholder(tf.int32)
 warmup_lr = tf.to_float(global_step) / tf.to_float(WARMUP_ITERATION) * WARMUP_LEARNING_RATE
 
 decay_lr = tf.train.cosine_decay(
@@ -143,9 +155,12 @@ train_summary_dic = {
     'Loss/Total_Loss' : loss_op,
     'Loss/Supervised_Loss' : sup_loss_op,
     'Loss/Unsupervised_Loss' : unsup_loss_op,
-    'Loss/L2_Regularization_Loss' : l2_reg_loss_op,                                                                                                                                                                                                                                                     
+    'Loss/L2_Regularization_Loss' : l2_reg_loss_op,     
+
     'Accuracy/Train' : accuracy_op,
+    
     'HyperParams/Learning_rate' : learning_rate,
+    'HyperParams/TSA' : alpha_t
 }
 
 train_summary_list = []
