@@ -28,7 +28,7 @@ def model_summary(vars, file_path = None):
             params = shape_parameters(shape)
 
             model_params += params
-
+            
             f.write('{:50s} {:20s} {:20s}'.format(var.name, str(shape), str(params)) + '\n')
             f.write('_' * 100 + '\n')
 
@@ -42,13 +42,17 @@ def model_summary(vars, file_path = None):
         f.write('_' * 100 + '\n')
 
 def KL_Divergence_with_logits(p_logits, q_logits):
-    p = tf.nn.softmax(p_logits)
-
-    log_p = tf.nn.log_softmax(p_logits)
-    log_q = tf.nn.log_softmax(q_logits)
+    p = tf.nn.softmax(p_logits, axis = -1)
+    
+    log_p = tf.nn.log_softmax(p_logits, axis = -1)
+    log_q = tf.nn.log_softmax(q_logits, axis = -1)
 
     kl = tf.reduce_sum(p * (log_p - log_q), axis = -1)
     return kl
+
+# mode_list = ['exp_schedule', 'log_schedule', 'linear_schedule']
+def TSA_Schedule(step, mode):
+    pass
 
 if __name__ == '__main__':
     p_logits = [

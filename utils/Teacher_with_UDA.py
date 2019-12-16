@@ -39,44 +39,38 @@ class Teacher(Thread):
                 time.sleep(0.1)
                 continue
 
-            self.watch.tik()
+            # self.watch.tik()
             
-            batch_sup_image_list = []
-            batch_sup_label_list = []
-            batch_unsup_image_list = []
-            batch_unsup_image_with_augment_list = []
+            batch_x_image_data = []
+            batch_x_label_data = []
+            batch_u_image_data = []
+            batch_ua_image_data = []
 
             np.random.shuffle(self.labeled_data_list)
             np.random.shuffle(self.unlabeled_data_list)
-
+            
             for data in self.labeled_data_list[:self.sup_batch_size]:
                 image, label = data
                 # image = self.augment(image.copy())
 
-                batch_sup_image_list.append(image.copy())
-                batch_sup_label_list.append(label)
+                batch_x_image_data.append(image.copy())
+                batch_x_label_data.append(label)
             
-            for image in self.unlabeled_data_list[:self.unsup_batch_size]:
-                batch_unsup_image_list.append(image.copy())
-                batch_unsup_image_with_augment_list.append(self.augment(image.copy()))
+            for u_image in self.unlabeled_data_list[:self.unsup_batch_size]:
+                ua_image = self.augment(u_image.copy())
+                batch_u_image_data.append(u_image)
+                batch_ua_image_data.append(ua_image)
+
+                # batch_ua_image_data.append(self.augment(u_image.copy()))
             
-            batch_sup_image_list = np.asarray(batch_sup_image_list, dtype = np.float32)
-            batch_sup_label_list = np.asarray(batch_sup_label_list, dtype = np.float32)
-            batch_unsup_image_list = np.asarray(batch_unsup_image_list, dtype = np.float32)
-            batch_unsup_image_with_augment_list = np.asarray(batch_unsup_image_with_augment_list, dtype = np.float32)
+            batch_x_image_data = np.asarray(batch_x_image_data, dtype = np.float32)
+            batch_x_label_data = np.asarray(batch_x_label_data, dtype = np.float32)
+            batch_u_image_data = np.asarray(batch_u_image_data, dtype = np.float32)
+            batch_ua_image_data = np.asarray(batch_ua_image_data, dtype = np.float32)
             
-            # normalize
-            batch_sup_image_list /= 255.
-            batch_sup_image_list = (batch_sup_image_list - self.augment.mean) / self.augment.std
-
-            batch_unsup_image_list /= 255.
-            batch_unsup_image_list = (batch_unsup_image_list - self.augment.mean) / self.augment.std
-
-            # print(batch_sup_image_list.min(), batch_sup_image_list.max())
-            # print(batch_unsup_image_list.min(), batch_unsup_image_list.max())
-            # print(batch_unsup_image_with_augment_list.min(), batch_unsup_image_with_augment_list.max())
-            
-            self.main_queue.put([batch_sup_image_list, batch_sup_label_list, batch_unsup_image_list, batch_unsup_image_with_augment_list])
-
-            # print('[{}] - {}ms'.format(self.main_queue.qsize(), self.watch.tok()))
-
+            self.main_queue.put([
+                batch_x_image_data, 
+                batch_x_label_data, 
+                batch_u_image_data, 
+                batch_ua_image_data
+            ])

@@ -6,7 +6,7 @@ from core.Define import *
 
 def WideResNet(input_var, is_training, scales = int(np.ceil(np.log2(IMAGE_SIZE))) - 2, filters = 32, repeat = 4, getter = None):
     # bn_args = dict(training = is_training, momentum = 0.999)
-    bn_args = dict(training = is_training, momentum = 0.9, epsilon = 1e-5)
+    bn_args = dict(training = is_training, momentum = 0.9, epsilon = 1e-5, scale = True)
     
     def conv_args(k, f):
         return dict(padding = 'same', kernel_initializer = tf.random_normal_initializer(stddev = tf.rsqrt(0.5 * k * k * f)))
@@ -29,7 +29,9 @@ def WideResNet(input_var, is_training, scales = int(np.ceil(np.log2(IMAGE_SIZE))
         return x + x0
 
     with tf.variable_scope('WideResNet', reuse = tf.AUTO_REUSE, custom_getter = getter):
-        x = input_var
+        x = input_var / 255.
+        x = (x - CIFAR_10_MEAN) / CIFAR_10_STD
+        
         x = tf.layers.conv2d(x, 16, 3, **conv_args(3, 16))
 
         for scale in range(scales):
@@ -45,3 +47,4 @@ def WideResNet(input_var, is_training, scales = int(np.ceil(np.log2(IMAGE_SIZE))
         predictions = tf.nn.softmax(logits, axis = -1)
 
     return logits, predictions
+

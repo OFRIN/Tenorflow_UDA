@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-train_steps = 10000
+train_steps = 40000
 warmup_steps = 2000
 learning_rate = 0.03
 min_lr_ratio = 0.004
@@ -35,6 +35,9 @@ for step in range(train_steps):
 
     step_list.append(step)
     lr_list.append(lr)
+
+# 0.0, 0.03
+print(min(lr_list), max(lr_list))
 
 plt.plot(step_list, lr_list)
 plt.show()
