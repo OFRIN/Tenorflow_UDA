@@ -33,7 +33,10 @@ args = parse_args()
 
 os.environ["CUDA_VISIBLE_DEVICES"] = args.use_gpu
 
-model_name = 'WRN-28-2_1.5M_cifar@{}_with_UDA'.format(args.labels)
+if args.tsa != '':
+    model_name = 'WRN-28-2_1.5M_cifar@{}_tsa@{}_with_UDA'.format(args.labels, args.tsa)
+else:
+    model_name = 'WRN-28-2_1.5M_cifar@{}_with_UDA'.format(args.labels)
 
 model_dir = './experiments/model/{}/'.format(model_name)
 ckpt_format = model_dir + '{}.ckpt'
@@ -90,8 +93,8 @@ sup_loss_op = tf.nn.softmax_cross_entropy_with_logits_v2(logits = x_logits_op, l
 
 # mode_list = ['exp_schedule', 'log_schedule', 'linear_schedule']
 if args.tsa != '':
-    log_print('[i] TSA : {}'.format(args.tsa))
-    alpha_t, nt = TSA_Schedule(global_step, MAX_ITERATION, args.tsa, CLASSES)
+    log_print('[i] TSA : {}'.format(args.tsa), log_txt_path)
+    alpha_t, nt = TSA_schedule(global_step, MAX_ITERATION, args.tsa, CLASSES)
 
     correct_prob = tf.reduce_sum(x_label_var * x_predictions_op, axis = -1)
     sup_mask = 1. - tf.cast(tf.greater(correct_prob, nt), tf.float32)
@@ -121,7 +124,7 @@ if args.confidence_mask != -1:
     unsup_mask = tf.cast(tf.greater(largest_prob, args.confidence_mask), tf.float32)
     unsup_loss_op = tf.stop_gradient(unsup_mask) * unsup_loss_op
 
-unsup_loss_op = tf.reduce_mean(unsup_loss_op)
+unsup_loss_op = UNSUP_RATIO * tf.reduce_mean(unsup_loss_op)
 
 # 2.5. l2 regularization loss
 train_vars = tf.trainable_variables()
@@ -160,7 +163,7 @@ train_summary_dic = {
     'Accuracy/Train' : accuracy_op,
     
     'HyperParams/Learning_rate' : learning_rate,
-    'HyperParams/TSA' : alpha_t
+    'HyperParams/TSA' : nt,
 }
 
 train_summary_list = []

@@ -16,21 +16,17 @@ def TSA_schedule(global_step, max_iteration, mode, K):
         alpha_t = np.exp((t/T - 1) * 5)
     else:
         assert False, "[!] TSA_schedule : {}".format(mode)
-    
+
     return alpha_t, alpha_t * (1 - 1/K) + 1/K
 
-train_steps = 40000
-warmup_steps = 2000
-learning_rate = 0.03
-min_lr_ratio = 0.004
+mode = 'log_schedule'
+max_iteration = 400000
 
-step_list = np.arange(train_steps)
-lr_list = cosine_learning_schedule(0.0, learning_rate, min_lr_ratio, warmup_steps, train_steps, alpha = 0.0)
-alpha_lr_list = cosine_learning_schedule(0.0, learning_rate, min_lr_ratio, warmup_steps, train_steps, alpha = min_lr_ratio)
+x_list = (1 + np.arange(max_iteration)) / max_iteration
+at_list = [TSA_schedule(step, max_iteration, mode, 10)[0] for step in range(1, max_iteration + 1)]
+nt_list = [TSA_schedule(step, max_iteration, mode, 10)[1] for step in range(1, max_iteration + 1)]
 
-print(min(alpha_lr_list), max(alpha_lr_list))
-
-plt.plot(step_list, lr_list)
-plt.plot(step_list, alpha_lr_list)
+plt.plot(x_list, at_list)
+plt.plot(x_list, nt_list)
 plt.show()
 
