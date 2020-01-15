@@ -21,7 +21,7 @@ def one_hot(label, classes):
     v[label] = 1.
     return v
 
-def get_dataset(dataset_dir, n_label, augment = None):
+def get_dataset(dataset_dir, n_label):
     train_dic = {}
     test_dataset = []
 
@@ -39,7 +39,7 @@ def get_dataset(dataset_dir, n_label, augment = None):
             image_data = data[b'data'][i]
 
             channel_size = 32 * 32        
-
+            
             r = image_data[:channel_size]
             g = image_data[channel_size : channel_size * 2]
             b = image_data[channel_size * 2 : ]
@@ -97,43 +97,37 @@ def get_dataset(dataset_dir, n_label, augment = None):
         
         for image in images[n_label_per_class:]:
             unlabeled_image_data.append(image)
-            # if augment is not None:
-            #     u_image = image.copy()
-            #     ua_image = augment(image.copy())
-
-            #     unlabeled_image_data.append([u_image, ua_image])
-            # else:
-            #     unlabeled_image_data.append(image)
-    
+            
     return labeled_data, unlabeled_image_data, test_dataset
 
-def get_dataset_fully_supervised(dataset_dir):
+def get_dataset_fully_supervised(dataset_dir, only_test = False):
     train_dataset = []
     test_dataset = []
     
-    #########################################################
-    # train 
-    #########################################################
-    for file_path in glob.glob(dataset_dir + "data_batch_*"):
-        data = get_data(file_path)
-        data_length = len(data[b'filenames'])
-        
-        for i in range(data_length):
-            label = int(data[b'labels'][i])
-            image_data = data[b'data'][i]
+    if not only_test:
+        #########################################################
+        # train 
+        #########################################################
+        for file_path in glob.glob(dataset_dir + "data_batch_*"):
+            data = get_data(file_path)
+            data_length = len(data[b'filenames'])
+            
+            for i in range(data_length):
+                label = int(data[b'labels'][i])
+                image_data = data[b'data'][i]
 
-            channel_size = 32 * 32        
+                channel_size = 32 * 32        
 
-            r = image_data[:channel_size]
-            g = image_data[channel_size : channel_size * 2]
-            b = image_data[channel_size * 2 : ]
+                r = image_data[:channel_size]
+                g = image_data[channel_size : channel_size * 2]
+                b = image_data[channel_size * 2 : ]
 
-            r = r.reshape((32, 32)).astype(np.uint8)
-            g = g.reshape((32, 32)).astype(np.uint8)
-            b = b.reshape((32, 32)).astype(np.uint8)
+                r = r.reshape((32, 32)).astype(np.uint8)
+                g = g.reshape((32, 32)).astype(np.uint8)
+                b = b.reshape((32, 32)).astype(np.uint8)
 
-            image = cv2.merge((b, g, r))
-            train_dataset.append([image, one_hot(label, 10)])
+                image = cv2.merge((b, g, r))
+                train_dataset.append([image, one_hot(label, 10)])
     
     #########################################################
     # test 

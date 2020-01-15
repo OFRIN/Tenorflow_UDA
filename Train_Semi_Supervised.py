@@ -13,7 +13,7 @@ import tensorflow as tf
 
 from queue import Queue
 
-from core.Define import *
+from core.UDA import *
 from core.WideResNet import *
 
 from utils.Utils import *
@@ -21,7 +21,7 @@ from utils.Teacher_with_UDA import *
 from utils.Tensorflow_Utils import *
 
 def parse_args():
-    parser = argparse.ArgumentParser(description='MixMatch', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(description='UDA', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     # gpu properties
     parser.add_argument('--use_gpu', dest='use_gpu', help='use gpu', default='0', type=str)
@@ -29,61 +29,85 @@ def parse_args():
     # cifar10 dataset
     parser.add_argument('--labels', dest='labels', help='labels', default='all', type=str)
 
+    # training properties
+    parser.add_argument('--model_name', dest='model_name', help='model_name', default='WideResNet', type=str)
+
+    parser.add_argument('--batch_size', dest='batch_size', help='batch_size', default=64, type=int)
+    parser.add_argument('--num_threads', dest='num_threads', help='num_threads', default=4, type=int)
+
+    parser.add_argument('--log_iteration', dest='log_iteration', help='log_iteration', default=100, type=int)
+    parser.add_argument('--save_iteration', dest='save_iteration', help='save_iteration', default=10000, type=int)
+
+    parser.add_argument('--max_iteration', dest='max_iteration', help='max_iteration', default=400000, type=int)
+    parser.add_argument('--warmup_iteration', dest='warmup_iteration', help='warmup_iteration', default=20000, type=int)
+
+    parser.add_argument('--warmup_learning_rate', dest='warmup_learning_rate', help='warmup_learning_rate', default=0.03, type=float)
+    parser.add_argument('--min_learning_rate', dest='min_learning_rate', help='min_learning_rate', default=0.004, type=float)
+
     # uda properties
-    parser.add_argument('--softmax-temp', dest='softmax_temp', default=-1, type=float)
-    parser.add_argument('--confidence-mask', dest='confidence_mask', default=-1, type=float)
+    parser.add_argument('--unsup_ratio', dest='unsup_ratio', default=5, type=int)
     parser.add_argument('--tsa', dest='tsa', default='', type=str)
+
+    parser.add_argument('--softmax_temp', dest='softmax_temp', default=-1, type=float)
+    parser.add_argument('--confidence_mask', dest='confidence_mask', default=-1, type=float)
 
     return parser.parse_args()
 
-args = parse_args()
+##########################################################################################################
+# preprocessing
+##########################################################################################################
+# 1.1.  
+args = vars(parse_args())
 
-os.environ["CUDA_VISIBLE_DEVICES"] = args.use_gpu
+folder_name = '{}'.format(args['model_name'])
+folder_name += '_cifar10@{}'.format(args['labels'])
+folder_name += '_unsup_ratio@{}'.format(args['unsup_ratio'])
 
-if args.tsa != '':
-    model_name = 'WRN-28-2_1.5M_cifar@{}_tsa@{}_with_UDA'.format(args.labels, args.tsa)
-else:
-    model_name = 'WRN-28-2_1.5M_cifar@{}_with_UDA'.format(args.labels)
+if args['tsa'] != '': folder_name += 'tsa@{}'.format(args['tsa'])
+if args['softmax_temp'] != '': folder_name += 'softmax_temp@{:.1f}'.format(args['softmax_temp'])
+if args['confidence_mask'] != '': folder_name += 'confidence_mask@{:.1f}'.format(args['confidence_mask'])
 
-model_dir = './experiments/model/{}/'.format(model_name)
+model_dir = './experiments/model/{}/'.format(folder_name)
 ckpt_format = model_dir + '{}.ckpt'
 log_txt_path = model_dir + 'log.txt'
 summary_txt_path = model_dir + 'model_summary.txt'
 
-tensorboard_path = './experiments/tensorboard/{}'.format(model_name)
+tensorboard_path = './experiments/tensorboard/{}'.format(folder_name)
+
+# 1.2.
+os.environ["CUDA_VISIBLE_DEVICES"] = args['use_gpu']
 
 if not os.path.isdir(model_dir):
     os.makedirs(model_dir)
 
 open(log_txt_path, 'w').close()
 
-log_print('# Use GPU : {}'.format(args.use_gpu), log_txt_path)
-log_print('# Labels : {}'.format(args.labels), log_txt_path)
-log_print('# batch size : {}'.format(BATCH_SIZE), log_txt_path)
-log_print('# max_iteration : {}'.format(MAX_ITERATION), log_txt_path)
+# 1.3.
+data_dir = './dataset/cifar10@{}/'.format(args['labels'])
 
-# 1. dataset
-labels = int(args.labels)
-augment = RandAugment()
+labeled_path = data_dir + 'labeled.npy'
+unlabeled_paths = glob.glob(data_dir + '*.npy')
 
-# 1.1 get labeled, unlabeled dataset
-labeled_data_list, unlabeled_data_list, test_data_list = get_dataset('./dataset/', labels, augment)
+dataset = np.load(labeled_path, allow_pickle = True)
+labeled_data_list = [[image, label] for image, label in zip(dataset.item().get('images'), dataset.item().get('labels'))]
 
 log_print('# labeled dataset : {}'.format(len(labeled_data_list)), log_txt_path)
-log_print('# unlabeled dataset : {}'.format(len(unlabeled_data_list)), log_txt_path)
+log_print('# unlabeled paths', log_txt_path)
+for path in unlabeled_paths:
+    log_print('-> {}'.format(path), log_txt_path)
 
+_, test_data_list = get_dataset_fully_supervised('./cifar10/')
 test_iteration = len(test_data_list) // BATCH_SIZE
 
-# 2. model
-
+##########################################################################################################
+# preprocessing
+##########################################################################################################
 # 2.1. init placeholder
-shape = [IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL]
+x_image_var = tf.placeholder(tf.float32, [None] + [32, 32, 3])
+x_label_var = tf.placeholder(tf.float32, [None, 10])
 
-x_image_var = tf.placeholder(tf.float32, [None] + shape, name = 'image/labeled')
-x_label_var = tf.placeholder(tf.float32, [None, CLASSES])
-
-u_image_var = tf.placeholder(tf.float32, [None] + shape, name = 'image/unlabeled')
-ua_image_var = tf.placeholder(tf.float32, [None] + shape, name = 'image/unlabeled_with_augment')
+u_image_var = tf.placeholder(tf.float32, [None] + [32, 32, 3])
+ua_image_var = tf.placeholder(tf.float32, [None] + [32, 32, 3])
 
 is_training = tf.placeholder(tf.bool)
 global_step = tf.placeholder(tf.int32)
