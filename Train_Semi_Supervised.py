@@ -22,11 +22,18 @@ from utils.Tensorflow_Utils import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description='MixMatch', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    # gpu properties
     parser.add_argument('--use_gpu', dest='use_gpu', help='use gpu', default='0', type=str)
+
+    # cifar10 dataset
     parser.add_argument('--labels', dest='labels', help='labels', default='all', type=str)
+
+    # uda properties
     parser.add_argument('--softmax-temp', dest='softmax_temp', default=-1, type=float)
     parser.add_argument('--confidence-mask', dest='confidence_mask', default=-1, type=float)
     parser.add_argument('--tsa', dest='tsa', default='', type=str)
+
     return parser.parse_args()
 
 args = parse_args()
