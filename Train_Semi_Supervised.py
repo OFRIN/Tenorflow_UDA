@@ -45,6 +45,8 @@ def parse_args():
     parser.add_argument('--min_learning_rate', dest='min_learning_rate', help='min_learning_rate', default=0.004, type=float)
 
     # uda properties
+    parser.add_argument('--weight_decay', dest='weight_decay', help='weight_decay', default=0.0005, type=int)
+
     parser.add_argument('--unsup_ratio', dest='unsup_ratio', default=5, type=int)
     parser.add_argument('--tsa', dest='tsa', default='', type=str)
 
@@ -86,7 +88,7 @@ open(log_txt_path, 'w').close()
 data_dir = './dataset/cifar10@{}/'.format(args['labels'])
 
 labeled_path = data_dir + 'labeled.npy'
-unlabeled_paths = glob.glob(data_dir + '*.npy')
+unlabeled_paths = glob.glob(data_dir + 'unlabel*.npy')
 
 dataset = np.load(labeled_path, allow_pickle = True)
 labeled_data_list = [[image, label] for image, label in zip(dataset.item().get('images'), dataset.item().get('labels'))]
@@ -96,13 +98,13 @@ log_print('# unlabeled paths', log_txt_path)
 for path in unlabeled_paths:
     log_print('-> {}'.format(path), log_txt_path)
 
-_, test_data_list = get_dataset_fully_supervised('./cifar10/')
+_, test_data_list = get_dataset_fully_supervised('./cifar10/', only_test = True)
 test_iteration = len(test_data_list) // BATCH_SIZE
 
 ##########################################################################################################
 # preprocessing
 ##########################################################################################################
-# 2.1. init placeholder
+# 2.1. define placeholders.
 x_image_var = tf.placeholder(tf.float32, [None] + [32, 32, 3])
 x_label_var = tf.placeholder(tf.float32, [None, 10])
 
@@ -116,16 +118,16 @@ global_step = tf.placeholder(tf.int32)
 x_logits_op, x_predictions_op = WideResNet(x_image_var, is_training)
 
 # 2.3. unsupervised model
-p_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(u_image_var, UNSUP_RATIO)], axis = 0)
-q_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(ua_image_var, UNSUP_RATIO)], axis = 0)
+p_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(u_image_var, args['unsup_ratio'])], axis = 0)
+q_logits_op = tf.concat([WideResNet(u, is_training)[0] for u in tf.split(ua_image_var, args['unsup_ratio'])], axis = 0)
 
 # 2.4. calculate supervised/unsupervised loss
 sup_loss_op = tf.nn.softmax_cross_entropy_with_logits_v2(logits = x_logits_op, labels = x_label_var)
 
 # mode_list = ['exp_schedule', 'log_schedule', 'linear_schedule']
-if args.tsa != '':
-    log_print('[i] TSA : {}'.format(args.tsa), log_txt_path)
-    alpha_t, nt = TSA_schedule(global_step, MAX_ITERATION, args.tsa, CLASSES)
+if args['tsa'] != '':
+    log_print('[i] TSA : {}'.format(args['tsa']), log_txt_path)
+    alpha_t, nt = TSA_schedule(global_step, MAX_ITERATION, args['tsa'], CLASSES)
 
     correct_prob = tf.reduce_sum(x_label_var * x_predictions_op, axis = -1)
     sup_mask = 1. - tf.cast(tf.greater(correct_prob, nt), tf.float32)
@@ -137,30 +139,30 @@ else:
     sup_loss_op = tf.reduce_mean(sup_loss_op)
 
 # with softmax temperature
-if args.softmax_temp != -1:
-    log_print('[i] softmax temperature : {}'.format(args.softmax_temp), log_txt_path)
-    p_logits_temp_op = p_logits_op / args.softmax_temp
+if args['softmax_temp'] != -1:
+    log_print('[i] softmax temperature : {}'.format(args['softmax_temp']), log_txt_path)
+    p_logits_temp_op = p_logits_op / args['softmax_temp']
 else:
     p_logits_temp_op = p_logits_op
 
 unsup_loss_op = KL_Divergence_with_logits(tf.stop_gradient(p_logits_temp_op), q_logits_op)
 
 # with confidence mask
-if args.confidence_mask != -1:
-    log_print('[i] confidence mask : {}'.format(args.confidence_mask), log_txt_path)
+if args['confidence_mask'] != -1:
+    log_print('[i] confidence mask : {}'.format(args['confidence_mask']), log_txt_path)
 
     unsup_prob = tf.nn.softmax(p_logits_op, axis = -1)
     largest_prob = tf.reduce_max(unsup_prob, axis = -1)
 
-    unsup_mask = tf.cast(tf.greater(largest_prob, args.confidence_mask), tf.float32)
+    unsup_mask = tf.cast(tf.greater(largest_prob, args['confidence_mask']), tf.float32)
     unsup_loss_op = tf.stop_gradient(unsup_mask) * unsup_loss_op
 
-unsup_loss_op = UNSUP_RATIO * tf.reduce_mean(unsup_loss_op)
+unsup_loss_op = args['unsup_ratio'] * tf.reduce_mean(unsup_loss_op)
 
 # 2.5. l2 regularization loss
 train_vars = tf.trainable_variables()
 l2_vars = train_vars # [var for var in train_vars if 'kernel' in var.name or 'weights' in var.name]
-l2_reg_loss_op = tf.add_n([tf.nn.l2_loss(var) for var in l2_vars]) * WEIGHT_DECAY
+l2_reg_loss_op = tf.add_n([tf.nn.l2_loss(var) for var in l2_vars]) * args['weight_decay']
 
 # 2.6. total loss
 loss_op = sup_loss_op + unsup_loss_op + l2_reg_loss_op
@@ -171,10 +173,13 @@ accuracy_op = tf.reduce_mean(tf.cast(correct_op, tf.float32)) * 100
 model_summary(train_vars, summary_txt_path)
 
 # 3. optimizer & tensorboard
-warmup_lr = tf.to_float(global_step) / tf.to_float(WARMUP_ITERATION) * WARMUP_LEARNING_RATE
 
+# increase learning rate linearly.
+warmup_lr = tf.to_float(global_step) / tf.to_float(args['warmup_iteration']) * args['warmup_learning_rate']
+
+# decrease learning rate using cosine decay.
 decay_lr = tf.train.cosine_decay(
-    WARMUP_LEARNING_RATE,
+    args['warmup_learning_rate'],
     global_step = global_step - WARMUP_ITERATION,
     decay_steps = MAX_ITERATION - WARMUP_ITERATION,
     alpha = MIN_LEARNING_RATE
@@ -194,8 +199,10 @@ train_summary_dic = {
     'Accuracy/Train' : accuracy_op,
     
     'HyperParams/Learning_rate' : learning_rate,
-    'HyperParams/TSA' : nt,
 }
+
+if args['tsa'] != '':
+    train_summary_dic['HyperParams/TSA_{}'.format(args['tsa'])] = nt
 
 train_summary_list = []
 for name in train_summary_dic.keys():
@@ -216,20 +223,28 @@ train_writer = tf.summary.FileWriter(tensorboard_path)
 # 5. thread
 best_valid_accuracy = 0.0
 
-train_threads = []
-main_queue = Queue(100 * NUM_THREADS)
+option = {
+    'sup_batch_size' : args['batch_size'],
+    'unsup_batch_size' : args['batch_size'] * args['unsup_ratio'],
+    
+    'load_npy_count' : 5,
+    'unsup_samples' : 50,
+}
 
-for i in range(NUM_THREADS):
+train_threads = []
+main_queue = Queue(25 * args['num_threads'])
+
+for i in range(args['num_threads']):
     log_print('# create thread : {}'.format(i), log_txt_path)
 
-    train_thread = Teacher(labeled_data_list, unlabeled_data_list, BATCH_SIZE, BATCH_SIZE * UNSUP_RATIO, main_queue)
+    train_thread = Teacher(labeled_data_list, unlabeled_paths, option, main_queue)
     train_thread.start()
     
     train_threads.append(train_thread)
 
     if i == 0:
-        log_print('# supervised batch size : {}'.format(train_thread.sup_batch_size), log_txt_path)
-        log_print('# unsupervised batch size : {}'.format(train_thread.unsup_batch_size), log_txt_path)
+        log_print('# supervised batch size : {}'.format(option['sup_batch_size']), log_txt_path)
+        log_print('# unsupervised batch size : {}'.format(option['unsup_batch_size']), log_txt_path)
 
 train_ops = [train_op, loss_op, sup_loss_op, unsup_loss_op, l2_reg_loss_op, accuracy_op, train_summary_op]
 
@@ -240,8 +255,7 @@ l2_reg_loss_list = []
 accuracy_list = []
 train_time = time.time()
 
-for iter in range(1, MAX_ITERATION + 1):
-    # get batch data with Thread
+for iter in range(1, args['max_iteration'] + 1):
     batch_x_image_data, batch_x_label_data, batch_u_image_data, batch_ua_image_data = main_queue.get()
 
     _feed_dict = {
@@ -262,7 +276,7 @@ for iter in range(1, MAX_ITERATION + 1):
     l2_reg_loss_list.append(l2_reg_loss)
     accuracy_list.append(accuracy)
     
-    if iter % LOG_ITERATION == 0:
+    if iter % args['log_iteration'] == 0:
         loss = np.mean(loss_list)
         sup_loss = np.mean(sup_loss_list)
         unsup_loss = np.mean(unsup_loss_list)
@@ -279,15 +293,15 @@ for iter in range(1, MAX_ITERATION + 1):
         accuracy_list = []
         train_time = time.time()
 
-    if iter % SAVE_ITERATION == 0:
+    if iter % args['save_iteration'] == 0:
         valid_time = time.time()
         valid_accuracy_list = []
         
-        for i in range(test_iteration):
-            batch_data_list = test_data_list[i * BATCH_SIZE : (i + 1) * BATCH_SIZE]
+        for i in range(args['save_iteration']):
+            batch_data_list = test_data_list[i * args['batch_size'] : (i + 1) * args['batch_size']]
 
-            batch_image_data = np.zeros((BATCH_SIZE, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL), dtype = np.float32)
-            batch_label_data = np.zeros((BATCH_SIZE, CLASSES), dtype = np.float32)
+            batch_image_data = np.zeros((args['batch_size'], 32, 32, 3), dtype = np.float32)
+            batch_label_data = np.zeros((args['batch_size'], 10), dtype = np.float32)
             
             for i, (image, label) in enumerate(batch_data_list):
                 batch_image_data[i] = image.astype(np.float32)
