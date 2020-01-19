@@ -23,7 +23,7 @@ if not os.path.isdir(dataset_dir):
     os.makedirs(dataset_dir)
 
 # load batch files.
-labeled_data, unlabeled_data, test_dataset = get_dataset('./cifar10/', int(args['labels']))
+labeled_data, unlabeled_data, _ = get_dataset('./cifar10/', int(args['labels']))
 unlabeled_data = np.asarray(unlabeled_data, dtype = np.uint8)
 
 # labeled dataset
@@ -45,8 +45,8 @@ augment = RandAugment()
 
 for i in range(args['augment_copy']):
     watch.tik()
-
-    images = [augment(image) for image in unlabeled_data]
+    
+    images = [[image, augment(image)] for image in unlabeled_data]
     np.save(dataset_dir + 'unlabeled_{}.npy'.format(i + 1), images)
     
     print('# {} - {}sec'.format(i + 1, watch.tok() / 1000))

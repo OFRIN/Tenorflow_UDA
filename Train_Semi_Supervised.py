@@ -99,7 +99,7 @@ for path in unlabeled_paths:
     log_print('-> {}'.format(path), log_txt_path)
 
 _, test_data_list = get_dataset_fully_supervised('./cifar10/', only_test = True)
-test_iteration = len(test_data_list) // BATCH_SIZE
+test_iteration = len(test_data_list) // args['batch_size']
 
 ##########################################################################################################
 # preprocessing
@@ -180,12 +180,12 @@ warmup_lr = tf.to_float(global_step) / tf.to_float(args['warmup_iteration']) * a
 # decrease learning rate using cosine decay.
 decay_lr = tf.train.cosine_decay(
     args['warmup_learning_rate'],
-    global_step = global_step - WARMUP_ITERATION,
-    decay_steps = MAX_ITERATION - WARMUP_ITERATION,
-    alpha = MIN_LEARNING_RATE
+    global_step = global_step - args['warmup_iteration'],
+    decay_steps = args['max_iteration'] - args['warmup_iteration'],
+    alpha = args['min_learning_rate']
 )
 
-learning_rate = tf.where(global_step < WARMUP_ITERATION, warmup_lr, decay_lr)
+learning_rate = tf.where(global_step < args['warmup_iteration'], warmup_lr, decay_lr)
 
 with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
     train_op = tf.train.MomentumOptimizer(learning_rate, momentum = 0.9, use_nesterov = True).minimize(loss_op)
